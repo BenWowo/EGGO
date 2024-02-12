@@ -1,7 +1,8 @@
 package main
 
 import (
-	"eggo/scanner"
+	"eggo/parser"
+	"fmt"
 	"log"
 	"os"
 )
@@ -13,7 +14,9 @@ func main() {
 
 	filePath := os.Args[1]
 
-	scanner := scanner.New(filePath)
+	parser := parser.New(filePath)
 
-	scanner.ScanFile()
+	ast := parser.ParseBinaryExpression()
+
+	fmt.Printf("%+v", ast)
 }

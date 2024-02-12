@@ -35,12 +35,12 @@ func New(filepath string) *Scanner {
 }
 
 func (s *Scanner) ScanFile() {
-	for tok := s.nextToken(); tok.Type != token.EOF; tok = s.nextToken() {
+	for tok := s.NextToken(); tok.Type != token.EOF; tok = s.NextToken() {
 		fmt.Printf("%v \n", tok)
 	}
 }
 
-func (s *Scanner) nextToken() token.Token {
+func (s *Scanner) NextToken() token.Token {
 	var tok token.Token
 
 	s.skipWhitespace()

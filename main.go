@@ -16,7 +16,7 @@ func main() {
 
 	parser := parser.New(filePath)
 
-	ast := parser.ParseBinaryExpression()
+	ast := parser.ParseBinaryOperation(0)
 
-	fmt.Printf("%+v", ast)
+	fmt.Printf("%v", ast)
 }

@@ -54,6 +54,32 @@ func (s *Scanner) NextToken() token.Token {
 		tok = token.Token{Type: token.SLASH, Literal: string(s.ch)}
 	case '*':
 		tok = token.Token{Type: token.STAR, Literal: string(s.ch)}
+	case '<':
+		if s.peekChar() == '<' {
+			// TODO
+			s.readChar() // advance the read
+			tok = token.Token{Type: token.LSHIFT, Literal: token.LSHIFT}
+		} else if s.peekChar() == '=' {
+			// TODO
+			s.readChar() // advance the read
+			tok = token.Token{Type: token.LT_EQ, Literal: token.LT_EQ}
+		} else {
+			// TODO
+			tok = token.Token{Type: token.LT, Literal: string(s.ch)}
+		}
+	case '>':
+		// TODO
+		if s.peekChar() == '>' {
+			s.readChar() // advance the read
+			tok = token.Token{Type: token.RSHIFT, Literal: token.RSHIFT}
+		} else if s.peekChar() == '=' {
+			// TODO
+			s.readChar() // advance the read
+			tok = token.Token{Type: token.GT_EQ, Literal: token.GT_EQ}
+		} else {
+			// TODO
+			tok = token.Token{Type: token.GT, Literal: string(s.ch)}
+		}
 	case 0:
 		tok = token.Token{Type: token.EOF, Literal: ""}
 	default:
@@ -85,6 +111,14 @@ func (s *Scanner) readChar() {
 
 	s.position = s.readPosition
 	s.readPosition += 1
+}
+
+func (s *Scanner) peekChar() byte {
+	if s.readPosition >= len(s.content) {
+		return 0
+	} else {
+		return s.content[s.readPosition]
+	}
 }
 
 func (s *Scanner) skipWhitespace() {

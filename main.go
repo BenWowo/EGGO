@@ -2,6 +2,7 @@ package main
 
 import (
 	"eggo/parser"
+	"eggo/repl"
 	"fmt"
 	"log"
 	"os"
@@ -18,5 +19,7 @@ func main() {
 
 	ast := parser.ParseBinaryOperation(0)
 
-	fmt.Printf("%v", ast)
+	fmt.Printf("%f\n", repl.InterpretAST(ast))
+
+	// fmt.Printf("%v\n", ast)
 }

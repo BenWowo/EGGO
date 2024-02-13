@@ -14,23 +14,23 @@ type ASTnode struct {
 }
 
 func (a *ASTnode) String() string {
-	return a.stringWithIndent(0) + "\n"
-}
+	var formatedString func(node *ASTnode, level int) string
+	formatedString = func(node *ASTnode, level int) string {
+		if node == nil {
+			return "nil"
+		}
 
-func (a *ASTnode) stringWithIndent(level int) string {
-	if a == nil {
-		return "nil"
+		prev_indent := strings.Repeat("  ", level)
+		cur_indent := strings.Repeat("  ", level+1)
+
+		lBrace := "{\n"
+		token := fmt.Sprintf("%sToken: %s\n", cur_indent, node.Token.Literal)
+		isTerminal := fmt.Sprintf("%sIsTerminal: %t\n", cur_indent, node.IsTerminal)
+		left := fmt.Sprintf("%sLeft: %s\n", cur_indent, formatedString(node.Left, level+1))
+		right := fmt.Sprintf("%sRight: %s\n", cur_indent, formatedString(node.Right, level+1))
+		rBrace := fmt.Sprintf("%s}", prev_indent)
+
+		return lBrace + token + isTerminal + left + right + rBrace
 	}
-
-	prev_indent := strings.Repeat("  ", level)
-	cur_indent := strings.Repeat("  ", level+1)
-
-	lBrace := "{\n"
-	token := fmt.Sprintf("%sToken: %s\n", cur_indent, a.Token.Literal)
-	isTerminal := fmt.Sprintf("%sIsTerminal: %t\n", cur_indent, a.IsTerminal)
-	left := fmt.Sprintf("%sLeft: %v\n", cur_indent, a.Left.stringWithIndent(level+1))
-	right := fmt.Sprintf("%sRight: %v\n", cur_indent, a.Right.stringWithIndent(level+1))
-	rBrace := fmt.Sprintf("%s}", prev_indent)
-
-	return lBrace + token + isTerminal + left + right + rBrace
+	return formatedString(a, 0)
 }

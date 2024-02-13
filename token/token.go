@@ -39,9 +39,9 @@ func Precedence_lookup(tok Token) int {
 	case SLASH:
 		return 13
 	case LSHIFT:
-		return 13
+		return 14
 	case RSHIFT:
-		return 13
+		return 14
 	default:
 		return 0
 	}

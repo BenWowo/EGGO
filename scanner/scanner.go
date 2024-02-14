@@ -46,6 +46,8 @@ func (s *Scanner) NextToken() token.Token {
 	s.skipWhitespace()
 
 	switch s.ch {
+	case ';':
+		tok = token.Token{Type: token.SEMICOLON, Literal: string(s.ch)}
 	case '-':
 		tok = token.Token{Type: token.MINUS, Literal: string(s.ch)}
 	case '+':
@@ -68,8 +70,8 @@ func (s *Scanner) NextToken() token.Token {
 			tok = token.Token{Type: token.LT, Literal: string(s.ch)}
 		}
 	case '>':
-		// TODO
 		if s.peekChar() == '>' {
+			// TODO
 			s.readChar() // advance the read
 			tok = token.Token{Type: token.RSHIFT, Literal: token.RSHIFT}
 		} else if s.peekChar() == '=' {
@@ -88,8 +90,11 @@ func (s *Scanner) NextToken() token.Token {
 			tok = token.Token{Type: token.INT, Literal: numberLiteral}
 		} else if isLetter(s.ch) {
 			identLiteral := s.readIdent()
-			// TODO - add case for keywords
-			tok = token.Token{Type: token.IDENT, Literal: identLiteral}
+			if keyword := token.KeywordTable[identLiteral]; keyword != "" {
+				tok = token.Token{Type: keyword, Literal: string(keyword)}
+			} else {
+				tok = token.Token{Type: token.IDENT, Literal: identLiteral}
+			}
 		} else {
 			tok = token.Token{Type: token.ILLEGAL, Literal: string(s.ch)}
 		}
@@ -129,7 +134,7 @@ func (s *Scanner) skipWhitespace() {
 
 func (s *Scanner) readIdent() string {
 	left := s.position
-	for isLetter(s.ch) {
+	for isLetter(s.ch) || isNumber(s.ch) {
 		s.readChar()
 	}
 	return s.content[left:s.position]

@@ -3,25 +3,37 @@ package token
 type TokenType string
 
 const (
-	PLUS  = "+"
-	MINUS = "-"
-	STAR  = "*"
-	SLASH = "/"
+	// operators
+	PLUS   = "+"
+	MINUS  = "-"
+	STAR   = "*"
+	SLASH  = "/"
+	LSHIFT = "<<"
+	RSHIFT = ">>"
 
 	LT    = "<"
 	GT    = ">"
 	LT_EQ = "<="
 	GT_EQ = ">="
 
-	LSHIFT = "<<"
-	RSHIFT = ">>"
-
+	// ?
 	INT   = "INT"
 	IDENT = "IDENT"
 
+	// ?
+	SEMICOLON = ";"
+
+	// keywords
+	PRINT = "print"
+
+	// special
 	ILLEGAL = "ILLEGAL"
 	EOF     = "EOF"
 )
+
+var KeywordTable = map[string]TokenType{
+	PRINT: PRINT,
+}
 
 type Token struct {
 	Type    TokenType

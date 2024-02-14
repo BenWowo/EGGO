@@ -45,17 +45,19 @@ var operatorTable = map[string]string{
 	token.STAR:  "mul",
 	token.SLASH: "div",
 }
-
-var numStackEntries = 0
+var numRegisters = 0
 var stackPosition = 0
 var llvm_gen = ""
 
-func GenerateLLVM(outfilepath string, root *parser.ASTnode) {
+func GenerateLLVM(inFilepath string, outfilepath string) {
+	p := parser.New(inFilepath)
+
 	llvm_gen += preamble
-	determineStackAllocations(root)
-	generateStackAllocations()
-	astToLLVM(root)
-	gen_printf(numStackEntries)
+	for root := p.ParseStatement(); root != nil; root = p.ParseStatement() {
+		// each statement has its own AST
+		gen_StackAllocations(root)
+		gen_AST(root)
+	}
 	llvm_gen += postamble
 
 	err := os.WriteFile(outfilepath, []byte(llvm_gen), 0644)
@@ -65,55 +67,72 @@ func GenerateLLVM(outfilepath string, root *parser.ASTnode) {
 	fmt.Printf("Successfully generated llvm!\n")
 }
 
-func determineStackAllocations(root *parser.ASTnode) {
-	if root == nil {
-		return
+func gen_StackAllocations(root *parser.ASTnode) {
+	var worker func(node *parser.ASTnode)
+	worker = func(node *parser.ASTnode) {
+		if node == nil {
+			return
+		}
+
+		worker(node.Left)
+		worker(node.Right)
+
+		if node.Token.Type == token.INT {
+			numRegisters += 1
+			llvm_gen += fmt.Sprintf("\t%%%d = alloca i32\n", numRegisters)
+		}
 	}
-	determineStackAllocations(root.Left)
-	determineStackAllocations(root.Right)
-	if root.Token.Type == token.INT {
-		numStackEntries += 1
-		stackPosition += 1
+	worker(root)
+	stackPosition = numRegisters
+}
+
+func gen_AST(root *parser.ASTnode) {
+	nodeIsOperator := func(node *parser.ASTnode) bool {
+		return node.Token.Type == token.PLUS || node.Token.Type == token.MINUS || node.Token.Type == token.STAR || node.Token.Type == token.SLASH
+	}
+
+	if root.Token.Type == token.PRINT {
+		gen_print(root)
+	} else if nodeIsOperator(root) {
+		gen_expression(root)
+	} else {
+		fmt.Printf("Unexpected ast token type in llvm %s\n", root.Token.Type)
+		panic("err")
 	}
 }
 
-func generateStackAllocations() {
-	for i := 1; i <= numStackEntries; i++ {
-		llvm_gen += fmt.Sprintf("\t%%%d = alloca i32\n", i)
-	}
+func gen_print(node *parser.ASTnode) int {
+	argReg := gen_expression(node.Left)
+
+	numRegisters += 1
+	llvm_gen += fmt.Sprintf("\t%%%d = call i32(i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @print_int_fstring, i32 0, i32 0), i32 %%%d)\n", numRegisters, argReg)
+	return numRegisters
 }
 
-func astToLLVM(root *parser.ASTnode) int {
+func gen_expression(root *parser.ASTnode) int {
 	if root.Token.Type == token.INT {
 		llvm_gen += fmt.Sprintf("\tstore i32 %s, i32* %%%d\n", root.Token.Literal, stackPosition)
 		stackPosition -= 1
 		return stackPosition + 1
 	}
 
-	// store left and right
-	leftReg := astToLLVM(root.Left)
-	rightReg := astToLLVM(root.Right)
+	leftReg := gen_expression(root.Left)
+	rightReg := gen_expression(root.Right)
 
-	// load the left - only if terminal
-	if root.Left.Token.Type == token.INT {
-		numStackEntries += 1
-		llvm_gen += fmt.Sprintf("\t%%%d = load i32, i32* %%%d\n", numStackEntries, leftReg)
-		leftReg = numStackEntries
+	if root.Left.IsTerminal {
+		numRegisters += 1
+		llvm_gen += fmt.Sprintf("\t%%%d = load i32, i32* %%%d\n", numRegisters, leftReg)
+		leftReg = numRegisters
 	}
 
-	// load the right - only if terminal
-	if root.Right.Token.Type == token.INT {
-		numStackEntries += 1
-		llvm_gen += fmt.Sprintf("\t%%%d = load i32, i32* %%%d\n", numStackEntries, rightReg)
-		rightReg = numStackEntries
+	if root.Right.IsTerminal {
+		numRegisters += 1
+		llvm_gen += fmt.Sprintf("\t%%%d = load i32, i32* %%%d\n", numRegisters, rightReg)
+		rightReg = numRegisters
 	}
 
-	numStackEntries += 1
-	llvm_gen += fmt.Sprintf("\t%%%d = %s nsw i32 %%%d, %%%d\n", numStackEntries, operatorTable[string(root.Token.Type)], leftReg, rightReg)
+	numRegisters += 1
+	llvm_gen += fmt.Sprintf("\t%%%d = %s nsw i32 %%%d, %%%d\n", numRegisters, operatorTable[string(root.Token.Type)], leftReg, rightReg)
 
-	return numStackEntries
-}
-
-func gen_printf(reg int) {
-	llvm_gen += fmt.Sprintf("\tcall i32(i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @print_int_fstring, i32 0, i32 0), i32 %%%d)\n", reg)
+	return numRegisters
 }

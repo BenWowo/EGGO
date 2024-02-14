@@ -1,9 +1,8 @@
 package main
 
 import (
+	"eggo/gen"
 	"eggo/parser"
-	"eggo/repl"
-	"fmt"
 	"log"
 	"os"
 )
@@ -18,8 +17,8 @@ func main() {
 	parser := parser.New(filePath)
 
 	ast := parser.ParseBinaryOperation(0)
-
-	fmt.Printf("%f\n", repl.InterpretAST(ast))
-
 	// fmt.Printf("%v\n", ast)
+	// fmt.Printf("%f\n", repl.InterpretAST(ast))
+
+	gen.GenerateLLVM("out/out.ll", ast)
 }

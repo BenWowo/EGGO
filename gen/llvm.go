@@ -1,9 +1,11 @@
 package gen
 
 import (
+	"eggo/ast"
 	"eggo/parser"
 	"eggo/token"
 	"fmt"
+	"log"
 	"os"
 )
 
@@ -67,9 +69,9 @@ func GenerateLLVM(inFilepath string, outfilepath string) {
 	fmt.Printf("Successfully generated llvm!\n")
 }
 
-func gen_StackAllocations(root *parser.ASTnode) {
-	var worker func(node *parser.ASTnode)
-	worker = func(node *parser.ASTnode) {
+func gen_StackAllocations(root *ast.ASTnode) {
+	var worker func(node *ast.ASTnode)
+	worker = func(node *ast.ASTnode) {
 		if node == nil {
 			return
 		}
@@ -77,7 +79,7 @@ func gen_StackAllocations(root *parser.ASTnode) {
 		worker(node.Left)
 		worker(node.Right)
 
-		if node.Token.Type == token.INT {
+		if node.IsTerminal {
 			numRegisters += 1
 			llvm_gen += fmt.Sprintf("\t%%%d = alloca i32\n", numRegisters)
 		}
@@ -86,22 +88,24 @@ func gen_StackAllocations(root *parser.ASTnode) {
 	stackPosition = numRegisters
 }
 
-func gen_AST(root *parser.ASTnode) {
-	nodeIsOperator := func(node *parser.ASTnode) bool {
+func gen_AST(root *ast.ASTnode) {
+	nodeIsOperator := func(node *ast.ASTnode) bool {
 		return node.Token.Type == token.PLUS || node.Token.Type == token.MINUS || node.Token.Type == token.STAR || node.Token.Type == token.SLASH
 	}
 
-	if root.Token.Type == token.PRINT {
+	switch root.Token.Type {
+	case token.PRINT:
 		gen_print(root)
-	} else if nodeIsOperator(root) {
-		gen_expression(root)
-	} else {
-		fmt.Printf("Unexpected ast token type in llvm %s\n", root.Token.Type)
-		panic("err")
+	default:
+		if nodeIsOperator(root) {
+			gen_expression(root)
+		} else {
+			log.Fatalf("Unexpected ast token type in llvm %s\n", root.Token.Type)
+		}
 	}
 }
 
-func gen_print(node *parser.ASTnode) int {
+func gen_print(node *ast.ASTnode) int {
 	argReg := gen_expression(node.Left)
 
 	numRegisters += 1
@@ -109,7 +113,7 @@ func gen_print(node *parser.ASTnode) int {
 	return numRegisters
 }
 
-func gen_expression(root *parser.ASTnode) int {
+func gen_expression(root *ast.ASTnode) int {
 	if root.Token.Type == token.INT {
 		llvm_gen += fmt.Sprintf("\tstore i32 %s, i32* %%%d\n", root.Token.Literal, stackPosition)
 		stackPosition -= 1

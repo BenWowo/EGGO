@@ -1,12 +1,12 @@
-package repl
+package main
 
 import (
-	"eggo/parser"
+	"eggo/ast"
 	"eggo/token"
 	"strconv"
 )
 
-func InterpretAST(root *parser.ASTnode) float64 {
+func interpretAST(root *ast.ASTnode) float64 {
 	if root.IsTerminal {
 		value, err := strconv.ParseFloat(root.Token.Literal, 64)
 		if err != nil {
@@ -19,55 +19,55 @@ func InterpretAST(root *parser.ASTnode) float64 {
 	case token.PLUS:
 		left, right := 0.0, 0.0
 		if root.Left != nil {
-			left = InterpretAST(root.Left)
+			left = interpretAST(root.Left)
 		}
 		if root.Right != nil {
-			right = InterpretAST(root.Right)
+			right = interpretAST(root.Right)
 		}
 		return left + right
 	case token.MINUS:
 		left, right := 0.0, 0.0
 		if root.Left != nil {
-			left = InterpretAST(root.Left)
+			left = interpretAST(root.Left)
 		}
 		if root.Right != nil {
-			right = InterpretAST(root.Right)
+			right = interpretAST(root.Right)
 		}
 		return left - right
 	case token.STAR:
 		left, right := 1.0, 1.0
 		if root.Left != nil {
-			left = InterpretAST(root.Left)
+			left = interpretAST(root.Left)
 		}
 		if root.Right != nil {
-			right = InterpretAST(root.Right)
+			right = interpretAST(root.Right)
 		}
 		return left * right
 	case token.SLASH:
 		left, right := 1.0, 1.0
 		if root.Left != nil {
-			left = InterpretAST(root.Left)
+			left = interpretAST(root.Left)
 		}
 		if root.Right != nil {
-			right = InterpretAST(root.Right)
+			right = interpretAST(root.Right)
 		}
 		return left / right
 	case token.LSHIFT:
 		left, right := 0, 0
 		if root.Left != nil {
-			left = int(InterpretAST(root.Left))
+			left = int(interpretAST(root.Left))
 		}
 		if root.Right != nil {
-			right = int(InterpretAST(root.Right))
+			right = int(interpretAST(root.Right))
 		}
 		return float64(left << right)
 	case token.RSHIFT:
 		left, right := 0, 0
 		if root.Left != nil {
-			left = int(InterpretAST(root.Left))
+			left = int(interpretAST(root.Left))
 		}
 		if root.Right != nil {
-			right = int(InterpretAST(root.Right))
+			right = int(interpretAST(root.Right))
 		}
 		return float64(left >> right)
 	default:

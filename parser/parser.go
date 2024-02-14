@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"eggo/ast"
 	"eggo/scanner"
 	"eggo/token"
 	"fmt"
@@ -25,8 +26,8 @@ func (p *Parser) nextToken() {
 	p.peekToken = p.s.NextToken()
 }
 
-func (p *Parser) ParseStatement() *ASTnode {
-	node := new(ASTnode)
+func (p *Parser) ParseStatement() *ast.ASTnode {
+	node := new(ast.ASTnode)
 
 	if p.peekToken.Type == token.EOF {
 		node = nil
@@ -42,10 +43,10 @@ func (p *Parser) ParseStatement() *ASTnode {
 
 // printStatement: "print" expression ";"
 // TODO - create new ast node with multiple children for variadic print args
-func (p *Parser) parsePrintStatement() *ASTnode {
+func (p *Parser) parsePrintStatement() *ast.ASTnode {
 	p.nextToken()
 
-	node := &ASTnode{
+	node := &ast.ASTnode{
 		Token: p.curToken,
 		// Left:  p.ParseBinaryOperation(0), // This caused me a huge headache ;(
 	}
@@ -53,7 +54,6 @@ func (p *Parser) parsePrintStatement() *ASTnode {
 
 	if p.peekToken.Type == token.SEMICOLON {
 		p.nextToken()
-		fmt.Printf("next token: %s\n", p.peekToken.Type)
 	} else {
 		fmt.Printf("expected semicolon after \"print\" \"expression\" got: %s\n", p.peekToken.Type)
 		panic("err")
@@ -62,8 +62,8 @@ func (p *Parser) parsePrintStatement() *ASTnode {
 	return node
 }
 
-func (p *Parser) ParseBinaryOperation(previous_precedence int) *ASTnode {
-	node := new(ASTnode)
+func (p *Parser) ParseBinaryOperation(previous_precedence int) *ast.ASTnode {
+	node := new(ast.ASTnode)
 
 	node.Left = p.parseTerminalNode()
 
@@ -79,7 +79,7 @@ func (p *Parser) ParseBinaryOperation(previous_precedence int) *ASTnode {
 		prev := node
 		prev.Right = p.ParseBinaryOperation(current_precedence)
 
-		node = &ASTnode{
+		node = &ast.ASTnode{
 			Token: p.curToken,
 			Left:  prev,
 		}
@@ -92,12 +92,12 @@ func (p *Parser) ParseBinaryOperation(previous_precedence int) *ASTnode {
 	return node.Left
 }
 
-func (p *Parser) parseTerminalNode() *ASTnode {
+func (p *Parser) parseTerminalNode() *ast.ASTnode {
 	p.nextToken()
-	return &ASTnode{Token: p.curToken, IsTerminal: true}
+	return &ast.ASTnode{Token: p.curToken, IsTerminal: true}
 }
 
-func (p *Parser) parseOperator() *ASTnode {
+func (p *Parser) parseOperator() *ast.ASTnode {
 	p.nextToken()
-	return &ASTnode{Token: p.curToken}
+	return &ast.ASTnode{Token: p.curToken}
 }

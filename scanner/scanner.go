@@ -45,7 +45,14 @@ func (s *Scanner) NextToken() token.Token {
 
 	s.skipWhitespace()
 
+	// kinda hacky way to handle non-space separated tokens
+	shouldReadNextChar := true
+
 	switch s.ch {
+	case '(':
+		tok = token.Token{Type: token.LParen, Literal: string(s.ch)}
+	case ')':
+		tok = token.Token{Type: token.RParen, Literal: string(s.ch)}
 	case ';':
 		tok = token.Token{Type: token.SEMICOLON, Literal: string(s.ch)}
 	case '-':
@@ -56,6 +63,8 @@ func (s *Scanner) NextToken() token.Token {
 		tok = token.Token{Type: token.SLASH, Literal: string(s.ch)}
 	case '*':
 		tok = token.Token{Type: token.STAR, Literal: string(s.ch)}
+	case '=':
+		tok = token.Token{Type: token.ASSIGN, Literal: string(s.ch)}
 	case '<':
 		if s.peekChar() == '<' {
 			// TODO
@@ -87,20 +96,23 @@ func (s *Scanner) NextToken() token.Token {
 	default:
 		if isNumber(s.ch) {
 			numberLiteral := s.readNumber()
-			tok = token.Token{Type: token.INT, Literal: numberLiteral}
+			tok = token.Token{Type: token.NUMBER_INT, Literal: numberLiteral}
 		} else if isLetter(s.ch) {
-			identLiteral := s.readIdent()
-			if keyword := token.KeywordTable[identLiteral]; keyword != "" {
-				tok = token.Token{Type: keyword, Literal: string(keyword)}
+			ident := s.readIdent()
+			if keyword := token.KeywordTable[ident]; keyword != "" {
+				tok = token.Token{Type: token.TokenType(keyword), Literal: string(keyword)}
 			} else {
-				tok = token.Token{Type: token.IDENT, Literal: identLiteral}
+				tok = token.Token{Type: token.IDENT, Literal: ident}
 			}
 		} else {
 			tok = token.Token{Type: token.ILLEGAL, Literal: string(s.ch)}
 		}
+		shouldReadNextChar = false
 	}
 
-	s.readChar()
+	if shouldReadNextChar {
+		s.readChar()
+	}
 	return tok
 }
 

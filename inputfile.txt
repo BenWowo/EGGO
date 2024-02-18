@@ -1,2 +1,7 @@
-print 2 + 3 * 5 ;
-print 2 * 5 + 10 ;
+int fred;
+int jim;
+
+fred = 5;
+jim = 7 + fred;
+
+print fred + jim;

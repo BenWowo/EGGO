@@ -5,6 +5,7 @@ import (
 	"eggo/scanner"
 	"eggo/token"
 	"fmt"
+	"log"
 )
 
 type Parser struct {
@@ -26,78 +27,148 @@ func (p *Parser) nextToken() {
 	p.peekToken = p.s.NextToken()
 }
 
-func (p *Parser) ParseStatement() *ast.ASTnode {
-	node := new(ast.ASTnode)
-
-	if p.peekToken.Type == token.EOF {
-		node = nil
-	} else if p.peekToken.Type == token.PRINT {
-		node = p.parsePrintStatement()
-	} else {
-		fmt.Printf("Unexpcted token Type in parser %s\n", p.peekToken.Type)
-		panic("err")
+func (p *Parser) expectPeek(tokTypes []token.TokenType) {
+	expectedTypes := map[token.TokenType]bool{}
+	for _, tokType := range tokTypes {
+		expectedTypes[tokType] = true
 	}
 
-	return node
+	valid := false
+	for _, tokType := range tokTypes {
+		if expectedTypes[tokType] {
+			valid = true
+		}
+	}
+
+	// I also wanna know which function call make the peek mad
+	if !valid {
+		errorStr := fmt.Sprintf("Unexpected peek token type: %s\n", p.peekToken.Type)
+		errorStr += fmt.Sprintf("Expected one of the following types [%v]", tokTypes)
+		log.Fatalf("%s\n", errorStr)
+
+	}
 }
 
-// printStatement: "print" expression ";"
-// TODO - create new ast node with multiple children for variadic print args
-func (p *Parser) parsePrintStatement() *ast.ASTnode {
+func (p *Parser) ParseStatement() ast.ASTnode {
+	node := new(ast.ASTnode)
+
+	// expect peek
+	p.expectPeek([]token.TokenType{token.PRINT, token.INT, token.IDENT})
+	switch p.peekToken.Type {
+	case token.EOF:
+		return nil
+	case token.PRINT:
+		*node = p.parsePrintStatement()
+	case token.INT:
+		*node = p.parseDeclarationStatement()
+	case token.IDENT:
+		*node = p.parseAssignmentStatement()
+	default:
+		log.Fatalf("Unexpected token Type in parser %s\n", p.peekToken.Type)
+	}
+
+	return *node
+}
+
+// int jim;
+func (p *Parser) parseDeclarationStatement() *ast.DeclareNode {
+	node := new(ast.DeclareNode)
+
+	p.expectPeek([]token.TokenType{token.INT}) // expect peek <data type>
+	p.nextToken()
+	node.DataType = p.curToken.Literal
+
+	p.expectPeek([]token.TokenType{token.IDENT})
+	p.nextToken()
+	node.Ident = p.curToken.Literal
+
+	p.expectPeek([]token.TokenType{token.SEMICOLON})
 	p.nextToken()
 
-	node := &ast.ASTnode{
-		Token: p.curToken,
-		// Left:  p.ParseBinaryOperation(0), // This caused me a huge headache ;(
-	}
-	node.Left = p.ParseBinaryOperation(0)
+	return node
+}
 
-	if p.peekToken.Type == token.SEMICOLON {
-		p.nextToken()
-	} else {
-		fmt.Printf("expected semicolon after \"print\" \"expression\" got: %s\n", p.peekToken.Type)
-		panic("err")
-	}
+// john = 10;
+// jim = 7 + john;
+func (p *Parser) parseAssignmentStatement() *ast.AssignNode {
+	node := new(ast.AssignNode)
+
+	p.expectPeek([]token.TokenType{token.IDENT})
+	p.nextToken()
+	node.Ident = p.curToken.Literal
+
+	p.expectPeek([]token.TokenType{token.ASSIGN})
+	p.nextToken()
+
+	node.Expression = p.parseExpression(0)
+
+	p.expectPeek([]token.TokenType{token.SEMICOLON})
+	p.nextToken()
 
 	return node
 }
 
-func (p *Parser) ParseBinaryOperation(previous_precedence int) *ast.ASTnode {
-	node := new(ast.ASTnode)
+// "print" expression ";"
+func (p *Parser) parsePrintStatement() *ast.PrintNode {
+	node := new(ast.PrintNode)
 
-	node.Left = p.parseTerminalNode()
+	p.expectPeek([]token.TokenType{token.PRINT})
+	p.nextToken()
 
-	// TODO handle end of file. As it is now the code will hang
-	if p.peekToken.Type == token.SEMICOLON {
+	node.Expression = p.parseExpression(0)
+
+	p.expectPeek([]token.TokenType{token.SEMICOLON})
+	p.nextToken()
+
+	return node
+}
+
+// 7 + john
+// 2 + 3 * 5
+func (p *Parser) parseExpression(previous_precedence int) *ast.ExpressionNode {
+	node := new(ast.ExpressionNode)
+
+	// fmt.Printf("Cur token when called: %v\n", p.curToken)
+	p.expectPeek([]token.TokenType{token.LParen, token.IDENT, token.NUMBER_INT})
+	p.nextToken()
+	if p.curToken.Literal == token.LParen {
+		node.Left = p.parseExpression(0)
+		p.expectPeek([]token.TokenType{token.RParen})
+		p.nextToken()
+	} else if p.curToken.Type == token.IDENT || p.curToken.Type == token.NUMBER_INT {
+		node.Left = &ast.ExpressionNode{
+			Value: p.curToken.Literal,
+		}
+	}
+
+	// expect peek semicolon or operator or RParen
+	// hmmm this is not necessaraly an expect peek because after a number
+	// you can have operator, rparen, or semicolon
+	// I guess in the case that it is not one of those you expect a semicolon
+	if p.peekToken.Type == token.SEMICOLON || p.peekToken.Type == token.RParen {
 		return node.Left
 	}
 
-	node.Token = p.parseOperator().Token
+	p.expectPeek([]token.TokenType{
+		token.PLUS, token.MINUS, token.STAR, token.SLASH, token.LSHIFT, token.RSHIFT,
+	})
+	p.nextToken()
+	node.Value = p.curToken.Literal
 
-	current_precedence := token.Precedence_lookup(node.Token)
+	current_precedence := token.OperatorTable[node.Value].Precedence
 	for current_precedence > previous_precedence {
 		prev := node
-		prev.Right = p.ParseBinaryOperation(current_precedence)
+		prev.Right = p.parseExpression(current_precedence)
 
-		node = &ast.ASTnode{
-			Token: p.curToken,
+		node = &ast.ExpressionNode{
+			Value: p.curToken.Literal,
 			Left:  prev,
 		}
 
-		if p.peekToken.Type == token.SEMICOLON {
+		if p.peekToken.Type == token.SEMICOLON || p.peekToken.Type == token.RParen {
 			return node.Left
 		}
 	}
 
 	return node.Left
-}
-
-func (p *Parser) parseTerminalNode() *ast.ASTnode {
-	p.nextToken()
-	return &ast.ASTnode{Token: p.curToken, IsTerminal: true}
-}
-
-func (p *Parser) parseOperator() *ast.ASTnode {
-	p.nextToken()
-	return &ast.ASTnode{Token: p.curToken}
 }

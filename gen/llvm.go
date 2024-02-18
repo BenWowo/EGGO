@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 )
 
 const (
@@ -23,7 +24,6 @@ define dso_local i32 @main() #0 {
 
 	postamble = `	ret i32 0
 }
-
 declare i32 @printf(i8*, ...) #1
 
 attributes #0 = { noinline nounwind optnone uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
@@ -41,14 +41,15 @@ attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protect
 `
 )
 
-var operatorTable = map[string]string{
-	token.PLUS:  "add",
-	token.MINUS: "sub",
-	token.STAR:  "mul",
-	token.SLASH: "div",
+type Symbol struct {
+	Name     string
+	DataType string
 }
+
+var SymbolTable = map[string]*Symbol{}
+
+// var stackPosition = 0
 var numRegisters = 0
-var stackPosition = 0
 var llvm_gen = ""
 
 func GenerateLLVM(inFilepath string, outfilepath string) {
@@ -56,9 +57,16 @@ func GenerateLLVM(inFilepath string, outfilepath string) {
 
 	llvm_gen += preamble
 	for root := p.ParseStatement(); root != nil; root = p.ParseStatement() {
-		// each statement has its own AST
-		gen_StackAllocations(root)
-		gen_AST(root)
+		switch root := root.(type) {
+		case *ast.DeclareNode:
+			gen_declaration(root)
+		case *ast.AssignNode:
+			gen_assign(root)
+		case *ast.PrintNode:
+			gen_print(root)
+		default:
+			fmt.Printf("Unexpeded statement type!\n")
+		}
 	}
 	llvm_gen += postamble
 
@@ -69,74 +77,64 @@ func GenerateLLVM(inFilepath string, outfilepath string) {
 	fmt.Printf("Successfully generated llvm!\n")
 }
 
-func gen_StackAllocations(root *ast.ASTnode) {
-	var worker func(node *ast.ASTnode)
-	worker = func(node *ast.ASTnode) {
-		if node == nil {
-			return
-		}
-
-		worker(node.Left)
-		worker(node.Right)
-
-		if node.IsTerminal {
-			numRegisters += 1
-			llvm_gen += fmt.Sprintf("\t%%%d = alloca i32\n", numRegisters)
-		}
+func gen_declaration(root *ast.DeclareNode) string {
+	DataTypeTable := map[string]string{
+		"int": "i32",
 	}
-	worker(root)
-	stackPosition = numRegisters
+
+	SymbolName, DataType := root.Ident, DataTypeTable[root.DataType]
+	SymbolTable[root.Ident] = &Symbol{Name: SymbolName, DataType: DataType}
+	llvm_gen += fmt.Sprintf("\t%%%s = alloca %s\n", SymbolName, DataType)
+
+	return fmt.Sprintf("%%%s", SymbolName)
 }
 
-func gen_AST(root *ast.ASTnode) {
-	nodeIsOperator := func(node *ast.ASTnode) bool {
-		return node.Token.Type == token.PLUS || node.Token.Type == token.MINUS || node.Token.Type == token.STAR || node.Token.Type == token.SLASH
+func gen_assign(root *ast.AssignNode) {
+	exprValue := gen_expression(root.Expression)
+	exprDataType := "i32" // for now just let all expr data types be i32
+	Smbl := SymbolTable[root.Ident]
+	if Smbl == nil {
+		log.Fatalf("LLVM Error Symbol \"%s\" not found!\n", root.Ident)
 	}
-
-	switch root.Token.Type {
-	case token.PRINT:
-		gen_print(root)
-	default:
-		if nodeIsOperator(root) {
-			gen_expression(root)
-		} else {
-			log.Fatalf("Unexpected ast token type in llvm %s\n", root.Token.Type)
-		}
-	}
+	llvm_gen += fmt.Sprintf("\tstore %s %s, %s* %%%s\n", exprDataType, exprValue, Smbl.DataType, Smbl.Name)
 }
 
-func gen_print(node *ast.ASTnode) int {
-	argReg := gen_expression(node.Left)
+func gen_print(node *ast.PrintNode) string {
+	argReg := gen_expression(node.Expression)
 
 	numRegisters += 1
-	llvm_gen += fmt.Sprintf("\t%%%d = call i32(i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @print_int_fstring, i32 0, i32 0), i32 %%%d)\n", numRegisters, argReg)
-	return numRegisters
+	llvm_gen += fmt.Sprintf("\t%%%d = call i32(i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @print_int_fstring, i32 0, i32 0), i32 %s)\n", numRegisters, argReg)
+	return fmt.Sprintf("%%%d", numRegisters)
 }
 
-func gen_expression(root *ast.ASTnode) int {
-	if root.Token.Type == token.INT {
-		llvm_gen += fmt.Sprintf("\tstore i32 %s, i32* %%%d\n", root.Token.Literal, stackPosition)
-		stackPosition -= 1
-		return stackPosition + 1
+func gen_expression(root *ast.ExpressionNode) string {
+	if root.IsTerminal() {
+		Smbl := SymbolTable[root.Value]
+		if Smbl != nil {
+			numRegisters += 1
+			llvm_gen += fmt.Sprintf("\t%%%d = load %s, %s* %%%s\n", numRegisters, Smbl.DataType, Smbl.DataType, Smbl.Name)
+			return fmt.Sprintf("%%%d", numRegisters)
+		} else if _, err := strconv.Atoi(root.Value); err == nil {
+			return string(root.Value)
+		} else {
+			log.Fatalf("Invalid Symbol in expression: %s\n", root.Value)
+		}
 	}
 
 	leftReg := gen_expression(root.Left)
 	rightReg := gen_expression(root.Right)
 
-	if root.Left.IsTerminal {
-		numRegisters += 1
-		llvm_gen += fmt.Sprintf("\t%%%d = load i32, i32* %%%d\n", numRegisters, leftReg)
-		leftReg = numRegisters
-	}
-
-	if root.Right.IsTerminal {
-		numRegisters += 1
-		llvm_gen += fmt.Sprintf("\t%%%d = load i32, i32* %%%d\n", numRegisters, rightReg)
-		rightReg = numRegisters
+	OperatorTable := map[string]string{
+		token.PLUS:  "add",
+		token.MINUS: "sub",
+		token.STAR:  "mul",
+		token.SLASH: "div",
+		// token.LSHIFT: "lshl",
+		// token.RSHIFT: "lshr",
 	}
 
 	numRegisters += 1
-	llvm_gen += fmt.Sprintf("\t%%%d = %s nsw i32 %%%d, %%%d\n", numRegisters, operatorTable[string(root.Token.Type)], leftReg, rightReg)
+	llvm_gen += fmt.Sprintf("\t%%%d = %s nsw i32 %s, %s\n", numRegisters, OperatorTable[root.Value], leftReg, rightReg)
 
-	return numRegisters
+	return fmt.Sprintf("%%%d", numRegisters)
 }

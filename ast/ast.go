@@ -1,21 +1,41 @@
 package ast
 
 import (
-	"eggo/token"
 	"fmt"
 	"strings"
 )
 
-type ASTnode struct {
-	Token      token.Token
-	Left       *ASTnode
-	Right      *ASTnode
-	IsTerminal bool
+type ASTnode interface {
+	// String() string
 }
 
-func (a *ASTnode) String() string {
-	var formatedString func(node *ASTnode, level int) string
-	formatedString = func(node *ASTnode, level int) string {
+type DeclareNode struct {
+	Ident    string
+	DataType string
+}
+
+type AssignNode struct {
+	Ident      string
+	Expression *ExpressionNode
+}
+
+type PrintNode struct {
+	Expression *ExpressionNode
+}
+
+type ExpressionNode struct {
+	Value string
+	Left  *ExpressionNode
+	Right *ExpressionNode
+}
+
+func (node *ExpressionNode) IsTerminal() bool {
+	return node.Left == nil && node.Right == nil
+}
+
+func (node *ExpressionNode) String() string {
+	var formatedString func(node *ExpressionNode, level int) string
+	formatedString = func(node *ExpressionNode, level int) string {
 		if node == nil {
 			return "nil"
 		}
@@ -24,13 +44,12 @@ func (a *ASTnode) String() string {
 		cur_indent := strings.Repeat("  ", level+1)
 
 		lBrace := "{\n"
-		token := fmt.Sprintf("%sToken: %s\n", cur_indent, node.Token.Literal)
-		isTerminal := fmt.Sprintf("%sIsTerminal: %t\n", cur_indent, node.IsTerminal)
+		value := fmt.Sprintf("%sToken: %s\n", cur_indent, node.Value)
 		left := fmt.Sprintf("%sLeft: %s\n", cur_indent, formatedString(node.Left, level+1))
 		right := fmt.Sprintf("%sRight: %s\n", cur_indent, formatedString(node.Right, level+1))
 		rBrace := fmt.Sprintf("%s}", prev_indent)
 
-		return lBrace + token + isTerminal + left + right + rBrace
+		return lBrace + value + left + right + rBrace
 	}
-	return formatedString(a, 0)
+	return formatedString(node, 0)
 }

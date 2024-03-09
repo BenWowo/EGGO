@@ -1,23 +1,10 @@
 package scanner
 
 import (
+	"eggo/lib"
 	"eggo/token"
 	"fmt"
-	"log"
-	"os"
 )
-
-// TODO - used buffered file reading vs reading in the whole file
-func fileToString(filePath string) string {
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		log.Fatalf("Error reading file: %s\n", err)
-	}
-
-	contentString := string(content)
-
-	return contentString
-}
 
 type Scanner struct {
 	content      string
@@ -28,7 +15,8 @@ type Scanner struct {
 
 func New(filepath string) *Scanner {
 	s := &Scanner{
-		content: fileToString(filepath),
+		// TODO - used buffered file reading vs reading in the whole file
+		content: lib.FileToString(filepath),
 	}
 	s.readChar()
 	return s
@@ -43,10 +31,11 @@ func (s *Scanner) ScanFile() {
 func (s *Scanner) NextToken() token.Token {
 	var tok token.Token
 
-	s.skipWhitespace()
+	// make this just advance to the next meaningful token
+	// within this function I can skip the whitespace and commnets
+	s.advancePosition()
 
-	// kinda hacky way to handle non-space separated tokens
-	shouldReadNextChar := true
+	// TODO - handle non space separated tokens
 
 	switch s.ch {
 	case '(':
@@ -63,32 +52,39 @@ func (s *Scanner) NextToken() token.Token {
 		tok = token.Token{Type: token.SLASH, Literal: string(s.ch)}
 	case '*':
 		tok = token.Token{Type: token.STAR, Literal: string(s.ch)}
+	case '!':
+		if s.peekChar() == '=' {
+			s.readChar()
+			tok = token.Token{Type: token.NE, Literal: token.NE}
+		} else {
+			tok = token.Token{Type: token.ILLEGAL, Literal: string(s.ch)}
+		}
+		// bitwise not
 	case '=':
-		tok = token.Token{Type: token.ASSIGN, Literal: string(s.ch)}
+		if s.peekChar() == '=' {
+			s.readChar()
+			tok = token.Token{Type: token.EQ, Literal: token.EQ}
+		} else {
+			tok = token.Token{Type: token.ASSIGN, Literal: string(s.ch)}
+		}
 	case '<':
 		if s.peekChar() == '<' {
-			// TODO
-			s.readChar() // advance the read
+			s.readChar()
 			tok = token.Token{Type: token.LSHIFT, Literal: token.LSHIFT}
 		} else if s.peekChar() == '=' {
-			// TODO
-			s.readChar() // advance the read
-			tok = token.Token{Type: token.LT_EQ, Literal: token.LT_EQ}
+			s.readChar()
+			tok = token.Token{Type: token.LE, Literal: token.LE}
 		} else {
-			// TODO
 			tok = token.Token{Type: token.LT, Literal: string(s.ch)}
 		}
 	case '>':
 		if s.peekChar() == '>' {
-			// TODO
-			s.readChar() // advance the read
+			s.readChar()
 			tok = token.Token{Type: token.RSHIFT, Literal: token.RSHIFT}
 		} else if s.peekChar() == '=' {
-			// TODO
-			s.readChar() // advance the read
-			tok = token.Token{Type: token.GT_EQ, Literal: token.GT_EQ}
+			s.readChar()
+			tok = token.Token{Type: token.GE, Literal: token.GE}
 		} else {
-			// TODO
 			tok = token.Token{Type: token.GT, Literal: string(s.ch)}
 		}
 	case 0:
@@ -107,12 +103,9 @@ func (s *Scanner) NextToken() token.Token {
 		} else {
 			tok = token.Token{Type: token.ILLEGAL, Literal: string(s.ch)}
 		}
-		shouldReadNextChar = false
 	}
 
-	if shouldReadNextChar {
-		s.readChar()
-	}
+	s.readChar()
 	return tok
 }
 
@@ -138,10 +131,33 @@ func (s *Scanner) peekChar() byte {
 	}
 }
 
-func (s *Scanner) skipWhitespace() {
-	for s.ch == ' ' || s.ch == '\t' || s.ch == '\n' || s.ch == '\r' {
+func (s *Scanner) advancePosition() {
+	for {
+		if s.ch == '/' && s.peekChar() == '/' {
+			// TODO add newline escape using backslash '\'
+			s.skipComment()
+		} else if isWhiteSpace(s.ch) {
+			s.skipWhitespace()
+		} else {
+			break
+		}
+	}
+}
+
+func (s *Scanner) skipComment() {
+	for s.ch != '\n' && s.ch != 0 {
 		s.readChar()
 	}
+}
+
+func (s *Scanner) skipWhitespace() {
+	for isWhiteSpace(s.ch) {
+		s.readChar()
+	}
+}
+
+func isWhiteSpace(ch byte) bool {
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
 }
 
 func (s *Scanner) readIdent() string {

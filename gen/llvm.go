@@ -78,15 +78,19 @@ func GenerateLLVM(inFilepath string, outfilepath string) {
 }
 
 func gen_declaration(root *ast.DeclareNode) string {
-	DataTypeTable := map[string]string{
-		"int": "i32",
+	dataTypeTable := map[string]string{
+		"bool":  "i1",
+		"char":  "i8",
+		"short": "i16",
+		"int":   "i32",
+		"long":  "i64",
 	}
 
-	SymbolName, DataType := root.Ident, DataTypeTable[root.DataType]
-	SymbolTable[root.Ident] = &Symbol{Name: SymbolName, DataType: DataType}
-	llvm_gen += fmt.Sprintf("\t%%%s = alloca %s\n", SymbolName, DataType)
+	symbolName, dataType := root.Ident, dataTypeTable[root.DataType]
+	SymbolTable[root.Ident] = &Symbol{Name: symbolName, DataType: dataType}
+	llvm_gen += fmt.Sprintf("\t%%%s = alloca %s\n", symbolName, dataType)
 
-	return fmt.Sprintf("%%%s", SymbolName)
+	return fmt.Sprintf("%%%s", symbolName)
 }
 
 func gen_assign(root *ast.AssignNode) {
@@ -109,8 +113,7 @@ func gen_print(node *ast.PrintNode) string {
 
 func gen_expression(root *ast.ExpressionNode) string {
 	if root.IsTerminal() {
-		Smbl := SymbolTable[root.Value]
-		if Smbl != nil {
+		if Smbl := SymbolTable[root.Value]; Smbl != nil {
 			numRegisters += 1
 			llvm_gen += fmt.Sprintf("\t%%%d = load %s, %s* %%%s\n", numRegisters, Smbl.DataType, Smbl.DataType, Smbl.Name)
 			return fmt.Sprintf("%%%d", numRegisters)
@@ -121,20 +124,78 @@ func gen_expression(root *ast.ExpressionNode) string {
 		}
 	}
 
+	type OpExprPair struct {
+		Op       string
+		ExprType string
+	}
+	OpExprTable := map[string]OpExprPair{
+		token.PLUS: {
+			Op:       "add",
+			ExprType: "numerical",
+		},
+		token.MINUS: {
+			Op:       "sub",
+			ExprType: "numerical",
+		},
+		token.STAR: {
+			Op:       "mul",
+			ExprType: "numerical",
+		},
+		token.SLASH: {
+			Op:       "div",
+			ExprType: "numerical",
+		},
+		// TODO - figure out how to add shifting in LLVM
+		// token.LSHIFT: {
+		// 	Op:    "lshl",
+		// 	ExprType: "numerical",
+		// },
+		// token.RSHIFT: {
+		// 	Op:    "lshr",
+		// 	ExprType: "numerical",
+		// },
+		token.EQ: {
+			Op:       "eq",
+			ExprType: "boolean",
+		},
+		token.NE: {
+			Op:       "ne",
+			ExprType: "boolean",
+		},
+		token.LT: {
+			Op:       "slt",
+			ExprType: "boolean",
+		},
+		token.LE: {
+			Op:       "sle",
+			ExprType: "boolean",
+		},
+		token.GT: {
+			Op:       "sgt",
+			ExprType: "boolean",
+		},
+		token.GE: {
+			Op:       "sge",
+			ExprType: "boolean",
+		},
+	}
+	operator, expressionType := OpExprTable[root.Value].Op, OpExprTable[root.Value].ExprType
+
 	leftReg := gen_expression(root.Left)
 	rightReg := gen_expression(root.Right)
 
-	OperatorTable := map[string]string{
-		token.PLUS:  "add",
-		token.MINUS: "sub",
-		token.STAR:  "mul",
-		token.SLASH: "div",
-		// token.LSHIFT: "lshl",
-		// token.RSHIFT: "lshr",
-	}
-
 	numRegisters += 1
-	llvm_gen += fmt.Sprintf("\t%%%d = %s nsw i32 %s, %s\n", numRegisters, OperatorTable[root.Value], leftReg, rightReg)
+	switch expressionType {
+	case "numerical":
+		llvm_gen += fmt.Sprintf("\t%%%d = %s nsw i32 %s, %s\n", numRegisters, operator, leftReg, rightReg)
+	case "boolean":
+		llvm_gen += fmt.Sprintf("\t%%%d = icmp %s i32 %s, %s\n", numRegisters, operator, leftReg, rightReg)
+		// sign extend the bool
+		numRegisters += 1
+		llvm_gen += fmt.Sprintf("\t%%%d = zext i1 %d to i32\n", numRegisters, numRegisters-1)
+	default:
+		log.Fatalf("Unexpeded expression type %s", expressionType)
+	}
 
 	return fmt.Sprintf("%%%d", numRegisters)
 }

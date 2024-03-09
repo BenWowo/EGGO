@@ -8,3 +8,15 @@ This is my compiler for the student led [Introduction to compiler design](https:
 
 Also I'm reading along with [writing an interpreter in go](https://interpreterbook.com/) so some of the
 code may look similar
+
+## Dependencies
+
+## Usage
+
+```bash
+make llvm
+```
+
+```bash
+make clean
+```

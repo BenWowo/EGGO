@@ -1,0 +1,18 @@
+// These are two declaration statements
+int fred ;
+// This is a comment between the declaration statements
+int jim ; // This is a comment after the declaration statement
+
+fred = 5 ;
+jim = 7 + fred ;
+
+// This is a comment after the assignment statement and before the print statement
+print fred + jim ;
+
+// This is a comment before a bunch of conditional statements
+print fred == jim ;
+print fred != jim ;
+print fred < jim ;
+print fred <= jim ;
+print fred > jim ;
+print fred >= jim ;

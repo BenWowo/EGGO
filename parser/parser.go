@@ -155,7 +155,7 @@ func (p *Parser) parseExpression(previous_precedence int) *ast.ExpressionNode {
 	p.nextToken()
 	node.Value = p.curToken.Literal
 
-	current_precedence := token.OperatorTable[node.Value].Precedence
+	current_precedence := token.OpPrecTable[node.Value].Precedence
 	for current_precedence > previous_precedence {
 		prev := node
 		prev.Right = p.parseExpression(current_precedence)

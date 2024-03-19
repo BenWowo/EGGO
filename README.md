@@ -14,7 +14,7 @@ code may look similar
 ## Usage
 
 ```bash
-make llvm
+make
 ```
 
 ```bash

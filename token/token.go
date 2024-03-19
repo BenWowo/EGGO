@@ -22,6 +22,8 @@ const (
 
 	LParen = "("
 	RParen = ")"
+	LBrace = "{"
+	RBrace = "}"
 
 	// token types
 	NUMBER_INT = "INT"
@@ -33,6 +35,9 @@ const (
 	// keywords
 	PRINT = "print"
 	INT   = "int"
+	IF    = "if"
+	ELSE  = "else"
+	WHILE = "while"
 
 	// special
 	ILLEGAL = "ILLEGAL"
@@ -42,6 +47,9 @@ const (
 var KeywordTable = map[string]string{
 	PRINT: PRINT,
 	INT:   INT,
+	IF:    IF,
+	ELSE:  ELSE,
+	WHILE: WHILE,
 }
 
 type opPrecPair struct {

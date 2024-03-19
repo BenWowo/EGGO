@@ -53,3 +53,22 @@ func (node *ExpressionNode) String() string {
 	}
 	return formatedString(node, 0)
 }
+
+type BlockNode struct {
+	Statements []*ASTnode
+}
+
+type IfNode struct {
+	Condition *ExpressionNode
+	HappyBody *BlockNode
+	SadBody   *ASTnode
+}
+
+func (node *IfNode) ContainsElse() bool {
+	return node.SadBody != nil
+}
+
+type WhileNode struct {
+	Condition *ExpressionNode
+	Body      *BlockNode
+}

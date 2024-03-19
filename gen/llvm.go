@@ -46,28 +46,34 @@ type Symbol struct {
 	DataType string
 }
 
-var SymbolTable = map[string]*Symbol{}
+var dataTypeTable = map[string]string{
+	"bool":  "i1",
+	"char":  "i8",
+	"short": "i16",
+	"int":   "i32",
+	"long":  "i64",
+}
+
+type symbolTableType map[string]*Symbol
+
+var globalSymbolTable symbolTableType
+
+type llvmRegister struct {
+	// thinking about register number
+	// data type
+	// maybe a symbol can have an associated register
+}
 
 // var stackPosition = 0
 var numRegisters = 0
 var llvm_gen = ""
+var p parser.Parser
 
 func GenerateLLVM(inFilepath string, outfilepath string) {
-	p := parser.New(inFilepath)
+	p = *parser.New(inFilepath)
 
 	llvm_gen += preamble
-	for root := p.ParseStatement(); root != nil; root = p.ParseStatement() {
-		switch root := root.(type) {
-		case *ast.DeclareNode:
-			gen_declaration(root)
-		case *ast.AssignNode:
-			gen_assign(root)
-		case *ast.PrintNode:
-			gen_print(root)
-		default:
-			fmt.Printf("Unexpeded statement type!\n")
-		}
-	}
+	gen_statements(p.ParseStatement(), globalSymbolTable)
 	llvm_gen += postamble
 
 	err := os.WriteFile(outfilepath, []byte(llvm_gen), 0644)
@@ -77,43 +83,60 @@ func GenerateLLVM(inFilepath string, outfilepath string) {
 	fmt.Printf("Successfully generated llvm!\n")
 }
 
-func gen_declaration(root *ast.DeclareNode) string {
-	dataTypeTable := map[string]string{
-		"bool":  "i1",
-		"char":  "i8",
-		"short": "i16",
-		"int":   "i32",
-		"long":  "i64",
+func gen_statements(root ast.ASTnode, symbolTable symbolTableType) string {
+	for ; root != nil; root = p.ParseStatement() {
+		gen_statement(root, symbolTable)
 	}
+}
 
+func gen_statement(root ast.ASTnode, symbolTable symbolTableType) string {
+	switch root := root.(type) {
+	case *ast.DeclareNode:
+		return gen_declaration(root, symbolTable)
+	case *ast.AssignNode:
+		return gen_assign(root, symbolTable)
+	case *ast.PrintNode:
+		return gen_print(root, symbolTable)
+	case *ast.BlockNode:
+		return gen_block(root, symbolTable)
+	case *ast.IfNode:
+		return gen_if(root, symbolTable)
+	case *ast.WhileNode:
+		return gen_while(root, symbolTable)
+	default:
+		fmt.Printf("Unexpeded statement type!\n")
+	}
+}
+
+func gen_declaration(root *ast.DeclareNode, symbolTable symbolTableType) string {
 	symbolName, dataType := root.Ident, dataTypeTable[root.DataType]
-	SymbolTable[root.Ident] = &Symbol{Name: symbolName, DataType: dataType}
+	symbolTable[root.Ident] = &Symbol{Name: symbolName, DataType: dataType}
 	llvm_gen += fmt.Sprintf("\t%%%s = alloca %s\n", symbolName, dataType)
 
 	return fmt.Sprintf("%%%s", symbolName)
 }
 
-func gen_assign(root *ast.AssignNode) {
-	exprValue := gen_expression(root.Expression)
+func gen_assign(root *ast.AssignNode, symbolTable symbolTableType) {
+	exprValue := gen_expression(root.Expression, symbolTable)
 	exprDataType := "i32" // for now just let all expr data types be i32
-	Smbl := SymbolTable[root.Ident]
+	Smbl := symbolTable[root.Ident]
 	if Smbl == nil {
 		log.Fatalf("LLVM Error Symbol \"%s\" not found!\n", root.Ident)
 	}
 	llvm_gen += fmt.Sprintf("\tstore %s %s, %s* %%%s\n", exprDataType, exprValue, Smbl.DataType, Smbl.Name)
 }
 
-func gen_print(node *ast.PrintNode) string {
-	argReg := gen_expression(node.Expression)
+func gen_print(node *ast.PrintNode, symbolTable symbolTableType) string {
+	argReg := gen_expression(node.Expression, symbolTable)
 
 	numRegisters += 1
 	llvm_gen += fmt.Sprintf("\t%%%d = call i32(i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @print_int_fstring, i32 0, i32 0), i32 %s)\n", numRegisters, argReg)
 	return fmt.Sprintf("%%%d", numRegisters)
 }
 
-func gen_expression(root *ast.ExpressionNode) string {
+func gen_expression(root *ast.ExpressionNode, symbolTable symbolTableType) string {
 	if root.IsTerminal() {
-		if Smbl := SymbolTable[root.Value]; Smbl != nil {
+		if Smbl := symbolTable[root.Value]; Smbl != nil {
 			numRegisters += 1
 			llvm_gen += fmt.Sprintf("\t%%%d = load %s, %s* %%%s\n", numRegisters, Smbl.DataType, Smbl.DataType, Smbl.Name)
 			return fmt.Sprintf("%%%d", numRegisters)
@@ -181,8 +204,8 @@ func gen_expression(root *ast.ExpressionNode) string {
 	}
 	operator, expressionType := OpExprTable[root.Value].Op, OpExprTable[root.Value].ExprType
 
-	leftReg := gen_expression(root.Left)
-	rightReg := gen_expression(root.Right)
+	leftReg := gen_expression(root.Left, symbolTable)
+	rightReg := gen_expression(root.Right, symbolTable)
 
 	numRegisters += 1
 	switch expressionType {
@@ -198,4 +221,32 @@ func gen_expression(root *ast.ExpressionNode) string {
 	}
 
 	return fmt.Sprintf("%%%d", numRegisters)
+}
+
+func gen_block(root *ast.BlockNode, smblTable symbolTableType) string {
+	return gen_statements(root.Statements, smblTable)
+}
+
+func gen_if(root *ast.IfNode, smblTable symbolTableType) {
+	condition := gen_expression(root.Condition, smblTable)
+	fmt.Sprintf("\tbr i1 %s, label %%true, label %%false\n", condition)
+	fmt.Sprintf("true:\n")
+	gen_block(root.HappyBody, smblTable)
+	fmt.Sprintf("br label %%tail\n")
+	if root.ContainsElse() {
+		fmt.Sprintf("false:\n")
+		fmt.Sprintf("br label %%tail\n")
+	}
+	fmt.Sprintf("tail:\n")
+}
+
+func gen_while(root *ast.WhileNode, smblTable symbolTableType) {
+	condition := gen_expression(root.Condition, smblTable)
+	fmt.Sprintf("br label %%condition\n")
+	fmt.Sprintf("condition:\n")
+	fmt.Sprintf("br i1 %%%s, label %%body, label %%tail", condition)
+	fmt.Sprintf("body:\n")
+	gen_block(root.Body, smblTable)
+	fmt.Sprintf("br label, %%condition\n")
+	fmt.Sprintf("tail:\n")
 }

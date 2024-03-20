@@ -2,3 +2,5 @@ a.out
 out.ll
 todos.md
 docs/
+parser/parser_test.go
+parser/bnf_grammer.txt

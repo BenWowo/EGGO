@@ -9,26 +9,35 @@ type ASTnode interface {
 	// String() string
 }
 
+// Node corresponding to statement of the form
+// "<dataType> <ident>;".
 type DeclareNode struct {
 	Ident    string
 	DataType string
 }
 
+// Node corresponding to statement of the form
+// "<ident> = <expr>".
 type AssignNode struct {
 	Ident      string
 	Expression *ExpressionNode
 }
 
+// Node corresponding to statement of the form
+// "print(<expr>)".
 type PrintNode struct {
 	Expression *ExpressionNode
 }
 
+// Node corresponding to statements that are expressions
+// of either integers or boolean expressions.
 type ExpressionNode struct {
 	Value string
 	Left  *ExpressionNode
 	Right *ExpressionNode
 }
 
+// Returns true if the expression node has not children.
 func (node *ExpressionNode) IsTerminal() bool {
 	return node.Left == nil && node.Right == nil
 }

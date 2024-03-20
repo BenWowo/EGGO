@@ -1,3 +1,6 @@
+// Package parser parses the input using the scanner package
+// and converts each the different types of statements into
+// their equivilant AST.
 package parser
 
 import (
@@ -27,6 +30,8 @@ func (p *Parser) nextToken() {
 	p.peekToken = p.s.NextToken()
 }
 
+// I can include the caller in parameters
+// actually I want to maintain the call stack where the expect went wrong
 func (p *Parser) expectPeek(expectedTypes ...token.TokenType) {
 	valid := false
 	for _, tokType := range expectedTypes {
@@ -38,14 +43,13 @@ func (p *Parser) expectPeek(expectedTypes ...token.TokenType) {
 	// I also wanna know which function call make the peek mad
 	if !valid {
 		errorStr := fmt.Sprintf("Unexpected peek token type: %s\n", p.peekToken.Type)
-		errorStr += fmt.Sprintf("Expected one of the following types [%v]", expectedTypes)
+		errorStr += fmt.Sprintf("Expected one of the following types %v", expectedTypes)
 		log.Fatalf("%s\n", errorStr)
-
 	}
 }
 
 func (p *Parser) expectParseStatement() {
-	p.expectPeek(token.PRINT, token.INT, token.IDENT, token.IF, token.WHILE, token.LBrace)
+	p.expectPeek(token.EOF, token.PRINT, token.INT, token.IDENT, token.IF, token.WHILE, token.LBrace)
 }
 
 func (p *Parser) ParseStatement() *ast.ASTnode {
@@ -200,7 +204,7 @@ func (p *Parser) parseBlockStatement() *ast.BlockNode {
 
 	for p.peekToken.Type != token.RBrace {
 		p.expectParseStatement()
-		append(node.Statements, p.ParseStatement())
+		node.Statements = append(node.Statements, p.ParseStatement())
 	}
 
 	p.expectPeek(token.RBrace)

@@ -1,0 +1,29 @@
+expression: INTEGER_LITERAL
+    | expression "*" expression
+    | expression "/" expression
+    | expression ">>" expression
+    | expression "<<" expression
+    | expression "+" expression
+    | expression "-" expression
+
+statements: statement 
+    | statement statements
+
+block_statement: "{" "}"
+    | "{" statements "}"
+
+statement: block_statement
+    | "print" expression ";"
+    | TYPE IDENTIFIER ";"
+    | IDENTIFIER "=" expression ";"
+    | "if" "(" expression ")" block_statement
+    | "if" "(" expression ")" block_statement "else" block_statement
+    | "while" "(" expression ")" block_statement
+
+function: TYPE IDENTIFIER "(" parameters ")" block_statement
+
+parameters: ""
+    | parameter
+    | parameter "," parameters
+
+parameter: TYPE IDENTIFIER

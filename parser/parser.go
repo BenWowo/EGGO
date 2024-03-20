@@ -1,3 +1,6 @@
+// Package parser parses the input using the scanner package
+// and converts each the different types of statements into
+// their equivilant AST.
 package parser
 
 import (
@@ -27,15 +30,12 @@ func (p *Parser) nextToken() {
 	p.peekToken = p.s.NextToken()
 }
 
-func (p *Parser) expectPeek(tokTypes []token.TokenType) {
-	expectedTypes := map[token.TokenType]bool{}
-	for _, tokType := range tokTypes {
-		expectedTypes[tokType] = true
-	}
-
+// I can include the caller in parameters
+// actually I want to maintain the call stack where the expect went wrong
+func (p *Parser) expectPeek(expectedTypes ...token.TokenType) {
 	valid := false
-	for _, tokType := range tokTypes {
-		if expectedTypes[tokType] {
+	for _, tokType := range expectedTypes {
+		if p.peekToken.Type == tokType {
 			valid = true
 		}
 	}
@@ -43,97 +43,115 @@ func (p *Parser) expectPeek(tokTypes []token.TokenType) {
 	// I also wanna know which function call make the peek mad
 	if !valid {
 		errorStr := fmt.Sprintf("Unexpected peek token type: %s\n", p.peekToken.Type)
-		errorStr += fmt.Sprintf("Expected one of the following types [%v]", tokTypes)
+		errorStr += fmt.Sprintf("Expected one of the following types %v", expectedTypes)
 		log.Fatalf("%s\n", errorStr)
-
 	}
 }
 
-func (p *Parser) ParseStatement() ast.ASTnode {
+func (p *Parser) expectParseStatement() {
+	p.expectPeek(token.EOF, token.PRINT, token.INT, token.IDENT, token.IF, token.WHILE, token.LBrace)
+}
+
+func (p *Parser) ParseStatement() *ast.ASTnode {
 	node := new(ast.ASTnode)
 
-	// expect peek
-	p.expectPeek([]token.TokenType{token.PRINT, token.INT, token.IDENT})
+	p.expectParseStatement()
 	switch p.peekToken.Type {
 	case token.EOF:
 		return nil
-	case token.PRINT:
-		*node = p.parsePrintStatement()
 	case token.INT:
 		*node = p.parseDeclarationStatement()
 	case token.IDENT:
 		*node = p.parseAssignmentStatement()
+	case token.PRINT:
+		*node = p.parsePrintStatement()
+	case token.LBrace:
+		*node = p.parseBlockStatement()
+	case token.IF:
+		*node = p.parseIfStatement()
+	case token.WHILE:
+		*node = p.parseWhileStatement()
 	default:
 		log.Fatalf("Unexpected token Type in parser %s\n", p.peekToken.Type)
 	}
 
-	return *node
+	return node
 }
 
-// int jim;
+func (p *Parser) expectParseDeclarationStatement() {
+	p.expectPeek(token.INT) // expect peek <data type>
+}
+
 func (p *Parser) parseDeclarationStatement() *ast.DeclareNode {
 	node := new(ast.DeclareNode)
 
-	p.expectPeek([]token.TokenType{token.INT}) // expect peek <data type>
+	p.expectParseDeclarationStatement()
 	p.nextToken()
 	node.DataType = p.curToken.Literal
 
-	p.expectPeek([]token.TokenType{token.IDENT})
+	p.expectPeek(token.IDENT)
 	p.nextToken()
 	node.Ident = p.curToken.Literal
 
-	p.expectPeek([]token.TokenType{token.SEMICOLON})
+	p.expectPeek(token.SEMICOLON)
 	p.nextToken()
 
 	return node
 }
 
-// john = 10;
-// jim = 7 + john;
+func (p *Parser) expectParseAssignmentStatement() {
+	p.expectPeek(token.IDENT)
+}
+
 func (p *Parser) parseAssignmentStatement() *ast.AssignNode {
 	node := new(ast.AssignNode)
 
-	p.expectPeek([]token.TokenType{token.IDENT})
+	p.expectParseAssignmentStatement()
 	p.nextToken()
 	node.Ident = p.curToken.Literal
 
-	p.expectPeek([]token.TokenType{token.ASSIGN})
+	p.expectPeek(token.ASSIGN)
 	p.nextToken()
 
+	p.expectParseExpression()
 	node.Expression = p.parseExpression(0)
 
-	p.expectPeek([]token.TokenType{token.SEMICOLON})
+	p.expectPeek(token.SEMICOLON)
 	p.nextToken()
 
 	return node
 }
 
-// "print" expression ";"
+func (p *Parser) expectParsePrintStatement() {
+	p.expectPeek(token.PRINT)
+}
+
 func (p *Parser) parsePrintStatement() *ast.PrintNode {
 	node := new(ast.PrintNode)
 
-	p.expectPeek([]token.TokenType{token.PRINT})
+	p.expectParsePrintStatement()
 	p.nextToken()
 
 	node.Expression = p.parseExpression(0)
 
-	p.expectPeek([]token.TokenType{token.SEMICOLON})
+	p.expectPeek(token.SEMICOLON)
 	p.nextToken()
 
 	return node
 }
 
-// 7 + john
-// 2 + 3 * 5
+func (p *Parser) expectParseExpression() {
+	p.expectPeek(token.LParen, token.IDENT, token.NUMBER_INT)
+}
+
 func (p *Parser) parseExpression(previous_precedence int) *ast.ExpressionNode {
 	node := new(ast.ExpressionNode)
 
-	// fmt.Printf("Cur token when called: %v\n", p.curToken)
-	p.expectPeek([]token.TokenType{token.LParen, token.IDENT, token.NUMBER_INT})
+	p.expectParseExpression()
 	p.nextToken()
 	if p.curToken.Literal == token.LParen {
 		node.Left = p.parseExpression(0)
-		p.expectPeek([]token.TokenType{token.RParen})
+		p.expectPeek(token.RParen)
 		p.nextToken()
 	} else if p.curToken.Type == token.IDENT || p.curToken.Type == token.NUMBER_INT {
 		node.Left = &ast.ExpressionNode{
@@ -149,9 +167,10 @@ func (p *Parser) parseExpression(previous_precedence int) *ast.ExpressionNode {
 		return node.Left
 	}
 
-	p.expectPeek([]token.TokenType{
+	p.expectPeek(
 		token.PLUS, token.MINUS, token.STAR, token.SLASH, token.LSHIFT, token.RSHIFT,
-	})
+		token.EQ, token.NE, token.LT, token.LE, token.GT, token.GE,
+	)
 	p.nextToken()
 	node.Value = p.curToken.Literal
 
@@ -171,4 +190,87 @@ func (p *Parser) parseExpression(previous_precedence int) *ast.ExpressionNode {
 	}
 
 	return node.Left
+}
+
+func (p *Parser) expectParseBlockStatement() {
+	p.expectPeek(token.LBrace)
+}
+
+func (p *Parser) parseBlockStatement() *ast.BlockNode {
+	node := new(ast.BlockNode)
+
+	p.expectParseBlockStatement()
+	p.nextToken()
+
+	for p.peekToken.Type != token.RBrace {
+		p.expectParseStatement()
+		node.Statements = append(node.Statements, p.ParseStatement())
+	}
+
+	p.expectPeek(token.RBrace)
+	p.nextToken()
+
+	return node
+}
+
+func (p *Parser) expectParseIfStatement() {
+	p.expectPeek(token.IF)
+}
+
+func (p *Parser) parseIfStatement() *ast.IfNode {
+	node := new(ast.IfNode)
+
+	p.expectParseIfStatement()
+	p.nextToken()
+
+	p.expectPeek(token.LParen)
+	p.nextToken()
+
+	p.expectPeek(token.LParen, token.IDENT, token.NUMBER_INT)
+	node.Condition = p.parseExpression(0)
+
+	p.expectPeek(token.RParen)
+	p.nextToken()
+
+	p.expectPeek(token.LBrace)
+	node.HappyBody = p.parseBlockStatement()
+
+	if p.peekToken.Type == token.ELSE {
+		p.expectPeek(token.ELSE)
+		p.nextToken()
+
+		// hmmm I want it to work for ifelse
+		// does else take a statement instead of a block statement?
+
+		// I think this should just be a statement and not a block statement
+		p.expectParseStatement()
+		node.SadBody = p.ParseStatement()
+	}
+
+	return node
+}
+
+func (p *Parser) expectParseWhileStatement() {
+	p.expectPeek(token.WHILE)
+}
+
+func (p *Parser) parseWhileStatement() *ast.WhileNode {
+	node := new(ast.WhileNode)
+
+	p.expectParseWhileStatement()
+	p.nextToken()
+
+	p.expectPeek(token.LParen)
+	p.nextToken()
+
+	p.expectPeek(token.LParen, token.IDENT, token.NUMBER_INT)
+	node.Condition = p.parseExpression(0)
+
+	p.expectPeek(token.RParen)
+	p.nextToken()
+
+	p.expectPeek(token.LBrace)
+	node.Body = p.parseBlockStatement()
+
+	return node
 }

@@ -13,6 +13,7 @@ type Scanner struct {
 	readPosition int
 }
 
+// Returns a pointer to an instance of a Scanner.
 func New(filepath string) *Scanner {
 	s := &Scanner{
 		// TODO - used buffered file reading vs reading in the whole file
@@ -22,12 +23,16 @@ func New(filepath string) *Scanner {
 	return s
 }
 
+// Debug fucntion that prints all of the tokens in the input file.
 func (s *Scanner) ScanFile() {
 	for tok := s.NextToken(); tok.Type != token.EOF; tok = s.NextToken() {
 		fmt.Printf("%v \n", tok)
 	}
 }
 
+// Returns the next token from the input stream.
+// If the end of the input stream has been reached
+// NextToken will return an EOF token.
 func (s *Scanner) NextToken() token.Token {
 	var tok token.Token
 
@@ -109,6 +114,9 @@ func (s *Scanner) NextToken() token.Token {
 	return tok
 }
 
+// Returns the next chracter from the input stream.
+// If the end of the input stream has been reached
+// readChar will return 0.
 func (s *Scanner) readChar() {
 	if s.readPosition >= len(s.content) {
 		s.ch = 0

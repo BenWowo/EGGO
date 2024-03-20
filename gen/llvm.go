@@ -41,161 +41,286 @@ attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protect
 `
 )
 
+var dataTypeTable = map[string]string{
+	"bool":  "i1",
+	"char":  "i8",
+	"short": "i16",
+	"int":   "i32",
+	"long":  "i64",
+}
+
 type Symbol struct {
 	Name     string
 	DataType string
 }
 
-var SymbolTable = map[string]*Symbol{}
+type smblTbleType map[string]*Symbol
+
+var globalSmblTble = make(smblTbleType)
+
+type llvmReg struct {
+	IsImmediate bool
+	DataType    string
+	// Name of llvm register or immediate.
+	// Example Names include "1" or "%jim".
+	Name string
+}
 
 // var stackPosition = 0
 var numRegisters = 0
 var llvm_gen = ""
+var p parser.Parser
 
-func GenerateLLVM(inFilepath string, outfilepath string) {
-	p := parser.New(inFilepath)
+// Generates llvm and writes to specified output file.
+func GenerateLLVM(inFilePath string, outFilePath string) {
+	p = *parser.New(inFilePath)
+	root := p.ParseStatement()
+	llvm_gen = preamble + genStatements(root, globalSmblTble) + postamble
 
-	llvm_gen += preamble
-	for root := p.ParseStatement(); root != nil; root = p.ParseStatement() {
-		switch root := root.(type) {
-		case *ast.DeclareNode:
-			gen_declaration(root)
-		case *ast.AssignNode:
-			gen_assign(root)
-		case *ast.PrintNode:
-			gen_print(root)
-		default:
-			fmt.Printf("Unexpeded statement type!\n")
-		}
-	}
-	llvm_gen += postamble
-
-	err := os.WriteFile(outfilepath, []byte(llvm_gen), 0644)
+	// TODO - compare performance between buffered file write and string write
+	err := os.WriteFile(outFilePath, []byte(llvm_gen), 0644)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Printf("Successfully generated llvm!\n")
 }
 
-func gen_declaration(root *ast.DeclareNode) string {
-	dataTypeTable := map[string]string{
-		"bool":  "i1",
-		"char":  "i8",
-		"short": "i16",
-		"int":   "i32",
-		"long":  "i64",
+// Generates and returns llvm for all of the statements within
+// the source file.
+func genStatements(root *ast.ASTnode, smblTble smblTbleType) string {
+	var stmts string
+
+	for ; root != nil; root = p.ParseStatement() {
+		stmts += genStatement(root, smblTble)
 	}
 
-	symbolName, dataType := root.Ident, dataTypeTable[root.DataType]
-	SymbolTable[root.Ident] = &Symbol{Name: symbolName, DataType: dataType}
-	llvm_gen += fmt.Sprintf("\t%%%s = alloca %s\n", symbolName, dataType)
-
-	return fmt.Sprintf("%%%s", symbolName)
+	return stmts
 }
 
-func gen_assign(root *ast.AssignNode) {
-	exprValue := gen_expression(root.Expression)
-	exprDataType := "i32" // for now just let all expr data types be i32
-	Smbl := SymbolTable[root.Ident]
-	if Smbl == nil {
-		log.Fatalf("LLVM Error Symbol \"%s\" not found!\n", root.Ident)
+// Generates and returns llvm for a generic ASTnode.
+func genStatement(root *ast.ASTnode, smblTble smblTbleType) (stmt string) {
+	switch root := (*root).(type) {
+	case *ast.DeclareNode:
+		stmt = genDeclaration(root, smblTble)
+	case *ast.AssignNode:
+		stmt, _ = genAssign(root, smblTble)
+	case *ast.PrintNode:
+		stmt = genPrint(root, smblTble)
+	case *ast.BlockNode:
+		stmt = genBlock(root, smblTble)
+	case *ast.IfNode:
+		stmt = genIf(root, smblTble)
+	case *ast.WhileNode:
+		stmt = genWhile(root, smblTble)
+	default:
+		log.Fatalf("LLVM unexpected stmt type: [%T]\n", root)
 	}
-	llvm_gen += fmt.Sprintf("\tstore %s %s, %s* %%%s\n", exprDataType, exprValue, Smbl.DataType, Smbl.Name)
+
+	return stmt
 }
 
-func gen_print(node *ast.PrintNode) string {
-	argReg := gen_expression(node.Expression)
+// Generates and returns llvm for a declaration AST.
+func genDeclaration(root *ast.DeclareNode, smblTble smblTbleType) string {
+	smblName, smblDataType := root.Ident, dataTypeTable[root.DataType]
+	smblTble[smblName] = &Symbol{
+		Name:     smblName,
+		DataType: smblDataType,
+	}
+
+	return fmt.Sprintf("\t%%%s = alloca %s\n", smblName, smblDataType)
+}
+
+// Generates and returns llvm for an assign AST.
+func genAssign(root *ast.AssignNode, smblTble smblTbleType) (string, *llvmReg) {
+	var assignStmt string
+
+	exprGen, exprReg := genExpression(root.Expression, smblTble)
+	assignStmt += exprGen
+
+	Smbl, found := smblTble[root.Ident]
+	if !found {
+		log.Fatalf("LLVM error symbol [%s] not found\n", root.Ident)
+	}
+
+	assignStmt += fmt.Sprintf("\tstore %s %s, %s* %%%s\n",
+		exprReg.DataType, exprReg.Name, Smbl.DataType, Smbl.Name,
+	)
+
+	return assignStmt, exprReg
+}
+
+// Generates and returns llvm for print AST.
+func genPrint(node *ast.PrintNode, smblTble smblTbleType) string {
+	var printStmt string
+
+	argGen, argReg := genExpression(node.Expression, smblTble)
+	printStmt += argGen
 
 	numRegisters += 1
-	llvm_gen += fmt.Sprintf("\t%%%d = call i32(i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @print_int_fstring, i32 0, i32 0), i32 %s)\n", numRegisters, argReg)
-	return fmt.Sprintf("%%%d", numRegisters)
+	printStmt += fmt.Sprintf("\t%%%d = call i32(i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @print_int_fstring, i32 0, i32 0), i32 %s)\n",
+		numRegisters, argReg.Name)
+
+	return printStmt
 }
 
-func gen_expression(root *ast.ExpressionNode) string {
+// Generates and returns llvm and llvmReg where result is stored.
+func genExpression(root *ast.ExpressionNode, smblTble smblTbleType) (string, *llvmReg) {
+	var exprStmt string
+	exprReg := new(llvmReg)
+
 	if root.IsTerminal() {
-		if Smbl := SymbolTable[root.Value]; Smbl != nil {
+		if Smbl := smblTble[root.Value]; Smbl != nil {
 			numRegisters += 1
-			llvm_gen += fmt.Sprintf("\t%%%d = load %s, %s* %%%s\n", numRegisters, Smbl.DataType, Smbl.DataType, Smbl.Name)
-			return fmt.Sprintf("%%%d", numRegisters)
+			exprStmt += fmt.Sprintf("\t%%%d = load %s, %s* %%%s\n", numRegisters, Smbl.DataType,
+				Smbl.DataType, Smbl.Name)
+
+			exprReg.DataType = Smbl.DataType
+			exprReg.IsImmediate = false
+			exprReg.Name = fmt.Sprintf("%%%d", numRegisters)
+
+			return exprStmt, exprReg
 		} else if _, err := strconv.Atoi(root.Value); err == nil {
-			return string(root.Value)
+			exprReg.DataType = "i32"
+			exprReg.IsImmediate = true
+			exprReg.Name = string(root.Value)
+
+			return exprStmt, exprReg
 		} else {
 			log.Fatalf("Invalid Symbol in expression: %s\n", root.Value)
 		}
 	}
+	exprReg.IsImmediate = false
 
-	type OpExprPair struct {
-		Op       string
-		ExprType string
-	}
-	OpExprTable := map[string]OpExprPair{
-		token.PLUS: {
-			Op:       "add",
-			ExprType: "numerical",
-		},
-		token.MINUS: {
-			Op:       "sub",
-			ExprType: "numerical",
-		},
-		token.STAR: {
-			Op:       "mul",
-			ExprType: "numerical",
-		},
-		token.SLASH: {
-			Op:       "div",
-			ExprType: "numerical",
-		},
-		// TODO - figure out how to add shifting in LLVM
-		// token.LSHIFT: {
-		// 	Op:    "lshl",
-		// 	ExprType: "numerical",
-		// },
-		// token.RSHIFT: {
-		// 	Op:    "lshr",
-		// 	ExprType: "numerical",
-		// },
-		token.EQ: {
-			Op:       "eq",
-			ExprType: "boolean",
-		},
-		token.NE: {
-			Op:       "ne",
-			ExprType: "boolean",
-		},
-		token.LT: {
-			Op:       "slt",
-			ExprType: "boolean",
-		},
-		token.LE: {
-			Op:       "sle",
-			ExprType: "boolean",
-		},
-		token.GT: {
-			Op:       "sgt",
-			ExprType: "boolean",
-		},
-		token.GE: {
-			Op:       "sge",
-			ExprType: "boolean",
-		},
-	}
-	operator, expressionType := OpExprTable[root.Value].Op, OpExprTable[root.Value].ExprType
+	leftGen, leftReg := genExpression(root.Left, smblTble)
+	exprStmt += leftGen
 
-	leftReg := gen_expression(root.Left)
-	rightReg := gen_expression(root.Right)
+	rightGen, rightReg := genExpression(root.Right, smblTble)
+	exprStmt += rightGen
+
+	operator := getExprOperator(root)
+	exprType := getExprType(root)
 
 	numRegisters += 1
-	switch expressionType {
-	case "numerical":
-		llvm_gen += fmt.Sprintf("\t%%%d = %s nsw i32 %s, %s\n", numRegisters, operator, leftReg, rightReg)
-	case "boolean":
-		llvm_gen += fmt.Sprintf("\t%%%d = icmp %s i32 %s, %s\n", numRegisters, operator, leftReg, rightReg)
+	switch exprType {
+	case "i32":
+		exprReg.DataType = "i32"
+		exprStmt += fmt.Sprintf("\t%%%d = %s nsw i32 %s, %s\n", numRegisters, operator,
+			leftReg.Name, rightReg.Name)
+	case "bool":
+		exprReg.DataType = "bool"
+		exprStmt += fmt.Sprintf("\t%%%d = icmp %s i32 %s, %s\n", numRegisters, operator,
+			leftReg.Name, rightReg.Name)
+
 		// sign extend the bool
 		numRegisters += 1
-		llvm_gen += fmt.Sprintf("\t%%%d = zext i1 %d to i32\n", numRegisters, numRegisters-1)
+		exprStmt += fmt.Sprintf("\t%%%d = zext i1 %d to i32\n", numRegisters, numRegisters-1)
 	default:
-		log.Fatalf("Unexpeded expression type %s", expressionType)
+		log.Fatalf("Unexpeded expression type [%s]", exprType)
 	}
 
-	return fmt.Sprintf("%%%d", numRegisters)
+	exprReg.Name = fmt.Sprintf("%%%d", numRegisters)
+	return exprStmt, exprReg
+}
+
+func getExprOperator(root *ast.ExpressionNode) (Operator string) {
+	switch root.Value {
+	case token.PLUS:
+		Operator = "add"
+	case token.MINUS:
+		Operator = "sub"
+	case token.STAR:
+		Operator = "mul"
+	case token.SLASH:
+		Operator = "div"
+	case token.EQ:
+		Operator = "eq"
+	case token.NE:
+		Operator = "ne"
+	case token.LT:
+		Operator = "slt"
+	case token.LE:
+		Operator = "sle"
+	case token.GT:
+		Operator = "sgt"
+	case token.GE:
+		Operator = "sge"
+	}
+
+	return Operator
+}
+
+// TODO: For now the types will only be "i32" and "i1"
+// I have some options how I can handle types here...
+func getExprType(root *ast.ExpressionNode) (ExprType string) {
+	switch root.Value {
+	case token.PLUS:
+		ExprType = "i32"
+	case token.MINUS:
+		ExprType = "i32"
+	case token.STAR:
+		ExprType = "i32"
+	case token.SLASH:
+		ExprType = "i32"
+	case token.EQ:
+		ExprType = "bool"
+	case token.NE:
+		ExprType = "bool"
+	case token.LT:
+		ExprType = "bool"
+	case token.LE:
+		ExprType = "bool"
+	case token.GT:
+		ExprType = "bool"
+	case token.GE:
+		ExprType = "bool"
+	}
+
+	return ExprType
+}
+
+// Generates llvm for block AST.
+func genBlock(root *ast.BlockNode, smblTable smblTbleType) string {
+	var blockStmts string
+
+	for stmtAST := p.ParseStatement(); stmtAST != nil; stmtAST = p.ParseStatement() {
+		blockStmts += genStatement(stmtAST, smblTable)
+	}
+
+	return blockStmts
+}
+
+// TODO: 08 Conditionals and Loops
+func genIf(root *ast.IfNode, smblTable smblTbleType) string {
+	var ifStmt string
+
+	_, conditionReg := genExpression(root.Condition, smblTable)
+
+	ifStmt += fmt.Sprintf("\tbr i1 %s, label %%true, label %%false\n", conditionReg.Name)
+	ifStmt += "true:\n"
+	ifStmt += genBlock(root.HappyBody, smblTable)
+	ifStmt += fmt.Sprintf("br label %%tail\n")
+	if root.ContainsElse() {
+		ifStmt += "false:\n"
+		ifStmt += genStatement(root.SadBody, smblTable)
+		ifStmt += "br label %%tail\n"
+	}
+	ifStmt += "tail:\n"
+
+	return ifStmt
+}
+
+// TODO: 08 Conditionals and Loops
+func genWhile(root *ast.WhileNode, smblTable smblTbleType) string {
+	var whileStmt string
+
+	condition, _ := genExpression(root.Condition, smblTable)
+	whileStmt += fmt.Sprintf("br label %%condition\n")
+	whileStmt += "condition:\n"
+	whileStmt += fmt.Sprintf("br i1 %%%s, label %%body, label %%tail", condition)
+	whileStmt += "body:\n"
+	whileStmt += genBlock(root.Body, smblTable)
+	whileStmt += fmt.Sprintf("br label, %%condition\n")
+	whileStmt += "tail:\n"
+
+	return whileStmt
 }
